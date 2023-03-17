@@ -1,10 +1,11 @@
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{self, Read};
+use std::io;
 use std::path::Path;
+use web3::types::U256;
 
 type Int = u64;
 
+#[derive(Debug)]
 pub struct BlockHeader {
     pub version: String,
     pub prev_hash: String,
@@ -53,21 +54,43 @@ impl Storage {
 
 pub fn parse_file<T: AsRef<Path>>(path: &T, storage: &mut Storage) -> Result<(), io::Error> {
     let mut offset = 0;
-    let block_height = 0;
+    let mut block_height = 0;
 
-    let file_as_bytes = std::fs::read(path)?;
+    let mut file_as_bytes = std::fs::read(path)?;
     let size = file_as_bytes.len();
     
     let mut pos = 0;
 
     while pos < size {
         let iter = file_as_bytes.iter();
-        let chunk = iter.skip(pos + 4);
+        let mut chunk = iter.skip(pos + 4);
 
-        let b = chunk.take(4).map(|k| *k).collect::<Vec<u8>>();
-        let block_size = u32::from_ne_bytes([b[0], b[1], b[2], b[3]]);
+        // Find block size
+        let block_size = u32::from_ne_bytes([*chunk.next().unwrap(); 4]);
 
-        
+        // Parse Header and Strore
+        let version = format!("{:#x}", u32::from_ne_bytes([*chunk.next().unwrap(); 4]));
+        let prev_hash = format!("{:#x}", U256::from_little_endian(&[*chunk.next().unwrap(); 32]));
+        let merkle_hash = format!("{:#x}", U256::from_little_endian(&[*chunk.next().unwrap(); 32]));
+        let time = format!("{:#x}", u32::from_ne_bytes([*chunk.next().unwrap(); 4]));
+        let n_bits = format!("{:#x}", u32::from_ne_bytes([*chunk.next().unwrap(); 4]));
+        let nonce = format!("{:#x}", u32::from_ne_bytes([*chunk.next().unwrap(); 4]));
+        storage.add_block(
+            block_height,
+            BlockHeader::new(version, prev_hash, merkle_hash, time, n_bits, nonce)
+        );
+
+        file_as_bytes = chunk.map(|k| *k).collect::<Vec<u8>>();
+
+        // Set next offset
+        offset = offset + 8 + block_size;
+        pos = offset as usize;
+
+
+        block_height += 1;
+
+        println!("Size: {}\nPos: {}\nOffset: {}\nBlock Height: {}\n", size, pos, offset, block_height);
+
     }
 
 
